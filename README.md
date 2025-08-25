@@ -43,23 +43,48 @@
 
 ## 🛠️ Установка и запуск
 
-### 1. Установка зависимостей
+### Локальная установка
+
+#### 1. Установка зависимостей
 ```bash
 pip install -r requirements.txt
 ```
 
-### 2. Запуск сервера
+#### 2. Запуск сервера
 ```bash
 python bio_api.py
 ```
 
-### 3. Проверка работы
-```bash
-# Тест планировщика
-python test_scheduler.py
+### Развертывание на Render
 
-# Тест полного цикла
-python test_full_cycle.py
+#### 1. Подключение к GitHub
+1. Зайдите на [render.com](https://render.com)
+2. Создайте новый Web Service
+3. Подключите GitHub репозиторий: `https://github.com/BLINK-sys/bio_api_and_update_stock_price.git`
+
+#### 2. Настройки развертывания
+- **Environment:** Python
+- **Build Command:** `pip install -r requirements.txt`
+- **Start Command:** `python bio_api.py`
+- **Plan:** Free
+
+#### 3. Переменные окружения (опционально)
+- `PYTHON_VERSION`: `3.9.16`
+
+#### 4. Автоматическое развертывание
+После подключения репозитория Render автоматически:
+- Клонирует код
+- Установит зависимости
+- Запустит приложение
+- Предоставит URL для доступа
+
+### Проверка работы
+```bash
+# Локальная проверка
+curl http://localhost:5000/products
+
+# Проверка на Render
+curl https://your-app-name.onrender.com/products
 ```
 
 ## 📊 Формула расчета цен
