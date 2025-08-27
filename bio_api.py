@@ -293,9 +293,10 @@ def run_update_stocks_script():
     """
     Запускает скрипт обновления остатков после завершения сбора данных
     """
+    start_time = datetime.now()
+    print(f"🔄 [{start_time}] Запускаем скрипт обновления остатков...")
+    
     try:
-        print(f"🔄 [{datetime.now()}] Запускаем скрипт обновления остатков...")
-        
         # Запускаем скрипт update_stocks_bio.py
         result = subprocess.run(
             ['python', 'update_stocks_bio.py'],
@@ -304,39 +305,57 @@ def run_update_stocks_script():
             cwd=os.getcwd()
         )
         
+        end_time = datetime.now()
+        duration = end_time - start_time
+        
         if result.returncode == 0:
-            print(f"✅ [{datetime.now()}] Скрипт обновления остатков успешно завершён")
-            print(f"📄 Вывод: {result.stdout}")
+            print(f"✅ [{end_time}] Скрипт обновления остатков успешно завершён")
+            print(f"✅ [{end_time}] Продолжительность: {duration}")
+            print(f"📄 Вывод скрипта:")
+            print(f"📄 {result.stdout}")
         else:
-            print(f"❌ [{datetime.now()}] Ошибка в скрипте обновления остатков")
-            print(f"📄 Ошибка: {result.stderr}")
+            print(f"❌ [{end_time}] Ошибка в скрипте обновления остатков")
+            print(f"❌ [{end_time}] Продолжительность до ошибки: {duration}")
+            print(f"📄 Ошибка скрипта:")
+            print(f"📄 {result.stderr}")
             
     except Exception as e:
-        print(f"❌ [{datetime.now()}] Ошибка запуска скрипта обновления: {e}")
+        end_time = datetime.now()
+        duration = end_time - start_time
+        print(f"❌ [{end_time}] Ошибка запуска скрипта обновления")
+        print(f"❌ [{end_time}] Продолжительность до ошибки: {duration}")
+        print(f"❌ [{end_time}] Ошибка: {e}")
 
 
 def scheduled_data_update():
     """
-    Функция для автоматического обновления данных в 5 утра по времени Франкфурта
+    Функция для автоматического обновления данных в 01:00 по времени Франкфурта
     """
+    start_time = datetime.now()
+    print(f"🌅 [{start_time}] ========================================")
+    print(f"🌅 [{start_time}] НАЧАЛО АВТОМАТИЧЕСКОГО ОБНОВЛЕНИЯ ДАННЫХ")
+    print(f"🌅 [{start_time}] ========================================")
+    
     try:
-        print(f"🌅 [{datetime.now()}] Начинаем автоматическое обновление данных...")
-        
         # Обновляем курсы валют
+        print(f"💱 [{datetime.now()}] Обновляем курсы валют...")
         valute.valute()
         importlib.reload(info)
         print(f"💱 [{datetime.now()}] Курсы валют обновлены: {info.exchange_rates}")
         
         # Инициализируем базу данных
+        print(f"🗄️ [{datetime.now()}] Инициализируем базу данных...")
         init_db()
         
         # Получаем категории
+        print(f"📂 [{datetime.now()}] Получаем категории товаров...")
         categories_response = fetch_categories()
         if "error" in categories_response:
             print(f"❌ [{datetime.now()}] Ошибка получения категорий: {categories_response['error']}")
             return
         
         # Обрабатываем товары
+        print(f"🔄 [{datetime.now()}] Начинаем обработку товаров...")
         total_products = 0
         for category_group in categories_response:
             categories = category_group.get("categories", [])
@@ -364,10 +383,30 @@ def scheduled_data_update():
         print(f"✅ [{datetime.now()}] Данные успешно сохранены в базу. Всего товаров: {total_products}")
         
         # Запускаем скрипт обновления остатков
+        print(f"🔄 [{datetime.now()}] Запускаем обновление остатков...")
         run_update_stocks_script()
         
+        # Выводим итоговую информацию
+        end_time = datetime.now()
+        duration = end_time - start_time
+        print(f"🎉 [{end_time}] ========================================")
+        print(f"🎉 [{end_time}] АВТОМАТИЧЕСКОЕ ОБНОВЛЕНИЕ УСПЕШНО ЗАВЕРШЕНО!")
+        print(f"🎉 [{end_time}] Время начала: {start_time}")
+        print(f"🎉 [{end_time}] Время завершения: {end_time}")
+        print(f"🎉 [{end_time}] Общая продолжительность: {duration}")
+        print(f"🎉 [{end_time}] Обработано товаров: {total_products}")
+        print(f"🎉 [{end_time}] ========================================")
+        
     except Exception as e:
-        print(f"❌ [{datetime.now()}] Ошибка автоматического обновления: {e}")
+        end_time = datetime.now()
+        duration = end_time - start_time
+        print(f"❌ [{end_time}] ========================================")
+        print(f"❌ [{end_time}] ОШИБКА АВТОМАТИЧЕСКОГО ОБНОВЛЕНИЯ!")
+        print(f"❌ [{end_time}] Время начала: {start_time}")
+        print(f"❌ [{end_time}] Время ошибки: {end_time}")
+        print(f"❌ [{end_time}] Продолжительность до ошибки: {duration}")
+        print(f"❌ [{end_time}] Ошибка: {e}")
+        print(f"❌ [{end_time}] ========================================")
 
 
 def start_scheduler():
@@ -375,11 +414,11 @@ def start_scheduler():
     Запускает планировщик задач в отдельном потоке
     """
     def run_scheduler():
-        # Планируем задачу на 5 утра по времени Франкфурта (UTC+1)
-        # Если сервер в UTC, то это 4 утра UTC
-        schedule.every().day.at("04:00").do(scheduled_data_update)
+        # Планируем задачу на 1 утра по времени Франкфурта (UTC+1)
+        # Если сервер в UTC, то это 0:00 UTC (полночь)
+        schedule.every().day.at("00:00").do(scheduled_data_update)
         
-        print(f"⏰ [{datetime.now()}] Планировщик запущен. Следующее обновление в 5:00 (время Франкфурта)")
+        print(f"⏰ [{datetime.now()}] Планировщик запущен. Следующее обновление в 01:00 (время Франкфурта)")
         
         while True:
             schedule.run_pending()
