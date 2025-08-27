@@ -1,6 +1,7 @@
 # Этот скрипт обновляет необходимые данные (ищет товар по Code,  меняет в нём price и  stock) на сервере ,
 # путём отправки их на https://pospro.kz/data_stocks_bio.php
-
+# путём отправки их на https://pospro.kz/dublicate_delete.php
+# 
 import requests
 import sqlite3
 import time
@@ -50,7 +51,7 @@ def chunk_list(data, chunk_size):
 
 def send_stock_with_price_to_server(stock_data, chunk_size=10):
     global response
-    url = "https://pospro.kz/data_stocks_bio.php"
+    url = "https://pospro.kz/dublicate_delete.php"
     total_chunks = ceil(len(stock_data) / chunk_size)
     chunk_index = 1
 
