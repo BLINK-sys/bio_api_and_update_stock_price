@@ -1,4 +1,4 @@
-# Этот скрипт обновляет данные одного товара (артикул 9590) на сервере,
+# Этот скрипт обновляет данные одного товара (артикул 157687) на сервере,
 # путём отправки на https://pospro.kz/dublicate_delete.php
 # 
 import requests
@@ -17,14 +17,14 @@ def round_price_to_hundred(price):
     return ceil(price / 100) * 100
 
 
-def fetch_single_product_from_db(product_code="9590"):
+def fetch_single_product_from_db(product_code="157687"):
     db_path = "products.db"
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
 
     # Извлекаем данные конкретного товара по артикулу
-    cursor.execute("SELECT code, inStock, price FROM products WHERE code = ?", (product_code,))
+    cursor.execute("SELECT code, inStock, price, description FROM products WHERE code = ?", (product_code,))
     row = cursor.fetchone()
 
     if row is None:
@@ -35,10 +35,18 @@ def fetch_single_product_from_db(product_code="9590"):
     original_price = row["price"] if row["price"] else 0
     rounded_price = round_price_to_hundred(original_price)
     
+    # Формируем описание с добавлением "(B)" в конце
+    description = row["description"] if row["description"] else ""
+    if description:
+        description = description + "\n(B)"
+    else:
+        description = "(B)"
+    
     stock_data = [{
         "code": row["code"],
         "inStock": row["inStock"],
-        "price": rounded_price  # Округляем цену до 100 вверх
+        "price": rounded_price,  # Округляем цену до 100 вверх
+        "description": description
     }]
 
     conn.close()
@@ -88,7 +96,7 @@ def send_single_product_to_server(stock_data):
                 time.sleep(30)
 
     # Если все попытки исчерпаны
-    error_message = f"Товар с артикулом 9590 не отправлен.\n"
+    error_message = f"Товар с артикулом 157687 не отправлен.\n"
     error_message += f"Ошибка: {response.text if 'response' in locals() else 'Нет ответа от сервера'}\n\n"
     with open("failed_single_product.txt", "a", encoding="utf-8") as file:
         file.write(error_message)
@@ -97,8 +105,8 @@ def send_single_product_to_server(stock_data):
 
 
 if __name__ == "__main__":
-    print("Начинаю обновление товара с артикулом 9590...")
-    stock_data = fetch_single_product_from_db("9590")
+    print("Начинаю обновление товара с артикулом 157687...")
+    stock_data = fetch_single_product_from_db("157687")
     
     if stock_data:
         print(f"Найден товар: {stock_data[0]}")

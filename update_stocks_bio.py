@@ -24,8 +24,8 @@ def fetch_stock_data_with_price_from_db():
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
 
-    # Извлекаем артикул, остатки и цену
-    cursor.execute("SELECT code, inStock, price FROM products")
+    # Извлекаем артикул, остатки, цену и описание
+    cursor.execute("SELECT code, inStock, price, description FROM products")
     rows = cursor.fetchall()
 
     stock_data = []
@@ -33,10 +33,18 @@ def fetch_stock_data_with_price_from_db():
         original_price = row["price"] if row["price"] else 0
         rounded_price = round_price_to_hundred(original_price)
         
+        # Формируем описание с добавлением "(B)" в конце
+        description = row["description"] if row["description"] else ""
+        if description:
+            description = description + "\n(B)"
+        else:
+            description = "(B)"
+        
         stock_data.append({
             "code": row["code"],
             "inStock": row["inStock"],
-            "price": rounded_price  # Округляем цену до 100 вверх
+            "price": rounded_price,  # Округляем цену до 100 вверх
+            "description": description
         })
 
     conn.close()
