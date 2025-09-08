@@ -29,7 +29,7 @@ valute.valute()
 # Перезагружаем модуль info для получения обновленных курсов
 import importlib
 importlib.reload(info)
-print("Курс валют обновлён: " + str(info.exchange_rates))
+print(f"💱 [{datetime.now()}] Курс валют обновлён: {info.exchange_rates}")
 
 
 def calculate_delivery_cost(weight_kg, volume_m3):
@@ -130,6 +130,11 @@ def init_db():
         description TEXT
     )
     """)
+    
+    # Очищаем старые данные перед записью новых
+    cursor.execute("DELETE FROM products")
+    print(f"🗑️ [{datetime.now()}] Старые данные из базы удалены")
+    
     conn.commit()
     conn.close()
 
@@ -188,8 +193,6 @@ def save_product_to_db(product):
     # Проверка дубликатов перед вставкой
     cursor.execute("SELECT id FROM products WHERE code = ?", (product.get("code"),))
     if cursor.fetchone() is None:
-        print(
-            f"Сохраняем продукт {product.get('name')} с размерами: {product.get('sizeNet')} / {product.get('sizeGross')}")
         cursor.execute("""
         INSERT INTO products (category, brand, code, country, dilerCurrency, dilerPrice,
                               fullName, inStock, model, name, price, priceCurrency, inReserve, img, 
@@ -224,8 +227,10 @@ def fetch_categories():
     try:
         response = requests.post(url, json=AUTH_CREDENTIALS)
         response.raise_for_status()
-        return response.json()
+        categories_data = response.json()
+        return categories_data
     except Exception as e:
+        print(f"❌ [{datetime.now()}] Ошибка получения категорий: {e}")
         return {"error": str(e)}
 
 
@@ -235,8 +240,10 @@ def fetch_products_by_category(category_id):
     try:
         response = requests.post(url, json=payload)
         response.raise_for_status()
-        return response.json()
+        products_data = response.json()
+        return products_data
     except Exception as e:
+        print(f"❌ [{datetime.now()}] Ошибка получения товаров категории {category_id}: {e}")
         return {"error": str(e)}
 
 
@@ -247,22 +254,26 @@ def fetch_product_details(product_code):
         response = requests.post(url, json=payload)
         response.raise_for_status()
         data = response.json()
-        print(f"Детали продукта {product_code}: {data}")  # Логируем ответ API
         return data
     except Exception as e:
-        print(f"Ошибка получения деталей для {product_code}: {e}")
+        print(f"❌ [{datetime.now()}] Ошибка получения деталей для {product_code}: {e}")
         return {}
 
 
 @app.route('/products', methods=['GET'])
 def get_all_products():
+    start_time = datetime.now()
+    print(f"🚀 [{start_time}] СТАРТ ПОЛУЧЕНИЯ ДАННЫХ ИЗ БИО")
+    
     init_db()
 
     categories_response = fetch_categories()
     if "error" in categories_response:
+        print(f"❌ [{datetime.now()}] Критическая ошибка получения категорий")
         return jsonify(categories_response), 500
 
     total_products = 0
+    
     for category_group in categories_response:
         categories = category_group.get("categories", [])
         for category in categories:
@@ -285,6 +296,10 @@ def get_all_products():
 
                         save_product_to_db(product)
                         total_products += 1
+    
+    end_time = datetime.now()
+    duration = end_time - start_time
+    print(f"✅ [{end_time}] ПОЛУЧЕНИЕ ДАННЫХ ИЗ БИО ЗАВЕРШЕНО. Товаров: {total_products}, Время: {duration}")
 
     return jsonify({"message": "Данные успешно сохранены в базу", "total_products": total_products})
 
@@ -294,7 +309,7 @@ def run_update_stocks_script():
     Запускает скрипт обновления остатков после завершения сбора данных
     """
     start_time = datetime.now()
-    print(f"🔄 [{start_time}] Запускаем скрипт обновления остатков...")
+    print(f"🔄 [{start_time}] ОБНОВЛЕНИЕ ОСТАТКОВ И ЦЕН")
     
     try:
         # Запускаем скрипт update_stocks_bio.py
@@ -357,6 +372,7 @@ def scheduled_data_update():
         # Обрабатываем товары
         print(f"🔄 [{datetime.now()}] Начинаем обработку товаров...")
         total_products = 0
+        
         for category_group in categories_response:
             categories = category_group.get("categories", [])
             for category in categories:
@@ -418,7 +434,7 @@ def start_scheduler():
         # Если сервер в UTC, то это 0:00 UTC (полночь)
         schedule.every().day.at("00:00").do(scheduled_data_update)
         
-        print(f"⏰ [{datetime.now()}] Планировщик запущен. Следующее обновление в 01:00 (время Франкфурта)")
+        print(f"⏰ [{datetime.now()}] Планировщик запущен. Следующее обновление в 00:00 UTC")
         
         while True:
             schedule.run_pending()
@@ -434,6 +450,10 @@ if __name__ == '__main__':
     # Запускаем планировщик при старте приложения
     start_scheduler()
     
+    # Запускаем обновление данных при старте приложения
+    print(f"🚀 [{datetime.now()}] СТАРТ ПОЛУЧЕНИЯ ДАННЫХ ИЗ БИО")
+    scheduled_data_update()
+    
     # Запускаем Flask сервер
-    print(f"🌐 [{datetime.now()}] Flask сервер запускается...")
+    print(f"🌐 [{datetime.now()}] Flask сервер запускается на порту 5000...")
     app.run(debug=False, host='0.0.0.0', port=5000)
