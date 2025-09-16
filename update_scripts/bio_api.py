@@ -15,6 +15,9 @@ import subprocess
 import os
 from datetime import datetime
 
+# Принудительно выводим лог о запуске модуля
+print(f"📦 [{datetime.now()}] Модуль bio_api.py загружен", flush=True)
+
 app = Flask(__name__)
 
 BASE_URL = "http://api.bioshop.ru:8030"
@@ -356,6 +359,9 @@ def scheduled_data_update():
     print(f"🌅 [{start_time}] НАЧАЛО АВТОМАТИЧЕСКОГО ОБНОВЛЕНИЯ ДАННЫХ", flush=True)
     
     try:
+        print(f"🔍 [{datetime.now()}] Функция scheduled_data_update вызвана", flush=True)
+    
+    try:
         # Обновляем курсы валют
         print(f"💱 [{datetime.now()}] Обновляем курсы валют...", flush=True)
         valute.valute()
@@ -419,6 +425,8 @@ def scheduled_data_update():
         print(f"❌ [{end_time}] ОШИБКА АВТОМАТИЧЕСКОГО ОБНОВЛЕНИЯ!", flush=True)
         print(f"❌ [{end_time}] Продолжительность до ошибки: {duration}", flush=True)
         print(f"❌ [{end_time}] Ошибка: {e}", flush=True)
+        import traceback
+        print(f"❌ [{end_time}] Traceback: {traceback.format_exc()}", flush=True)
 
 
 def start_scheduler():
@@ -443,13 +451,26 @@ def start_scheduler():
 
 
 if __name__ == '__main__':
-    # Запускаем планировщик при старте приложения
-    start_scheduler()
-    
-    # Запускаем обновление данных при старте приложения
-    print(f"🚀 [{datetime.now()}] СТАРТ ПОЛУЧЕНИЯ ДАННЫХ ИЗ БИО", flush=True)
-    scheduled_data_update()
-    
-    # Запускаем Flask сервер
-    print(f"🌐 [{datetime.now()}] Flask сервер запускается на порту 5000...", flush=True)
-    app.run(debug=False, host='0.0.0.0', port=5000)
+    try:
+        # Принудительно выводим лог о запуске
+        print(f"🎯 [{datetime.now()}] ЗАПУСК ПРИЛОЖЕНИЯ BIO API", flush=True)
+        sys.stdout.flush()
+        
+        # Запускаем планировщик при старте приложения
+        start_scheduler()
+        
+        # Запускаем обновление данных при старте приложения
+        print(f"🚀 [{datetime.now()}] СТАРТ ПОЛУЧЕНИЯ ДАННЫХ ИЗ БИО", flush=True)
+        sys.stdout.flush()
+        scheduled_data_update()
+        
+        # Запускаем Flask сервер
+        print(f"🌐 [{datetime.now()}] Flask сервер запускается на порту 5000...", flush=True)
+        print(f"🌐 [{datetime.now()}] Сервер готов к работе!", flush=True)
+        sys.stdout.flush()
+        app.run(debug=False, host='0.0.0.0', port=5000)
+    except Exception as e:
+        print(f"❌ [{datetime.now()}] КРИТИЧЕСКАЯ ОШИБКА: {e}", flush=True)
+        import traceback
+        print(f"❌ [{datetime.now()}] Traceback: {traceback.format_exc()}", flush=True)
+        sys.stdout.flush()
