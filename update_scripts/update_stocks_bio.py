@@ -73,29 +73,29 @@ def send_stock_with_price_to_server(stock_data, chunk_size=10):
                 response = requests.post(url, json=payload, timeout=30)
                 if response.status_code == 200:
                     try:
-                        print(f"Порция {chunk_index}/{total_chunks} успешно отправлена.")
-                        print("Статус-код:", response.status_code)
-                        print("Ответ сервера:", response.json())
+                        print(f"Порция {chunk_index}/{total_chunks} успешно отправлена.", flush=True)
+                        print("Статус-код:", response.status_code, flush=True)
+                        print("Ответ сервера:", response.json(), flush=True)
                     except Exception as e:
                         print("Ошибка обработки JSON:", str(e))
                         print("Текст ответа:", response.text)
                     break  # Успешно, переходим к следующему чанку
                 else:
-                    print(f"Ошибка {response.status_code}. Текст ответа сервера:")
-                    print(response.text)
+                    print(f"Ошибка {response.status_code}. Текст ответа сервера:", flush=True)
+                    print(response.text, flush=True)
                     retry_count += 1
-                    print(f"Попытка {retry_count} через 30 секунд...")
+                    print(f"Попытка {retry_count} через 30 секунд...", flush=True)
                     time.sleep(30)
             except requests.exceptions.Timeout:
-                print(f"Таймаут. Попытка {retry_count + 1} через 30 секунд...")
+                print(f"Таймаут. Попытка {retry_count + 1} через 30 секунд...", flush=True)
                 retry_count += 1
                 time.sleep(30)
             except requests.exceptions.ConnectionError as e:
-                print(f"Ошибка соединения: {str(e)}. Попытка {retry_count + 1} через 30 секунд...")
+                print(f"Ошибка соединения: {str(e)}. Попытка {retry_count + 1} через 30 секунд...", flush=True)
                 retry_count += 1
                 time.sleep(30)
             except requests.exceptions.RequestException as e:
-                print(f"Общая ошибка: {str(e)}. Попытка {retry_count + 1} через 30 секунд...")
+                print(f"Общая ошибка: {str(e)}. Попытка {retry_count + 1} через 30 секунд...", flush=True)
                 retry_count += 1
                 time.sleep(30)
 
@@ -104,12 +104,21 @@ def send_stock_with_price_to_server(stock_data, chunk_size=10):
             error_message += f"Ошибка: {response.text if 'response' in locals() else 'Нет ответа от сервера'}\n\n"
             with open("failed_stocks.txt", "a", encoding="utf-8") as file:
                 file.write(error_message)
-            print(f"Порция {chunk_index}/{total_chunks} записана в failed_stocks.txt из-за ошибок.")
+            print(f"Порция {chunk_index}/{total_chunks} записана в failed_stocks.txt из-за ошибок.", flush=True)
 
         chunk_index += 1
 
 
 if __name__ == "__main__":
+    import sys
+    from datetime import datetime
+    
+    print(f"🔄 [{datetime.now()}] НАЧАЛО ОБНОВЛЕНИЯ ОСТАТКОВ И ЦЕН", flush=True)
+    
     stock_data = fetch_stock_data_with_price_from_db()
+    print(f"📊 [{datetime.now()}] Получено {len(stock_data)} товаров для обновления", flush=True)
+    
     send_stock_with_price_to_server(stock_data, chunk_size=10)  # Размер чанка = 10 записей
+    
+    print(f"✅ [{datetime.now()}] ОБНОВЛЕНИЕ ОСТАТКОВ И ЦЕН ЗАВЕРШЕНО", flush=True)
     time.sleep(5)  # Задержка между отправками чанков

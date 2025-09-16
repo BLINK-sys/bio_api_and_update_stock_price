@@ -1,5 +1,6 @@
 # Тут идёт выгрузка данных из Bio  по API  и сохранение в базу (с конвертацией цен по формуле)
 import math
+import sys
 
 import requests
 import sqlite3
@@ -29,7 +30,7 @@ valute.valute()
 # Перезагружаем модуль info для получения обновленных курсов
 import importlib
 importlib.reload(info)
-print(f"💱 [{datetime.now()}] Курс валют обновлён: {info.exchange_rates}")
+print(f"💱 [{datetime.now()}] Курс валют обновлён: {info.exchange_rates}", flush=True)
 
 
 def calculate_delivery_cost(weight_kg, volume_m3):
@@ -133,7 +134,7 @@ def init_db():
     
     # Очищаем старые данные перед записью новых
     cursor.execute("DELETE FROM products")
-    print(f"🗑️ [{datetime.now()}] Старые данные из базы удалены")
+    print(f"🗑️ [{datetime.now()}] Старые данные из базы удалены", flush=True)
     
     conn.commit()
     conn.close()
@@ -263,7 +264,7 @@ def fetch_product_details(product_code):
 @app.route('/products', methods=['GET'])
 def get_all_products():
     start_time = datetime.now()
-    print(f"🚀 [{start_time}] СТАРТ ПОЛУЧЕНИЯ ДАННЫХ ИЗ БИО")
+    print(f"🚀 [{start_time}] СТАРТ ПОЛУЧЕНИЯ ДАННЫХ ИЗ БИО", flush=True)
     
     init_db()
 
@@ -299,7 +300,7 @@ def get_all_products():
     
     end_time = datetime.now()
     duration = end_time - start_time
-    print(f"✅ [{end_time}] ПОЛУЧЕНИЕ ДАННЫХ ИЗ БИО ЗАВЕРШЕНО. Товаров: {total_products}, Время: {duration}")
+    print(f"✅ [{end_time}] ПОЛУЧЕНИЕ ДАННЫХ ИЗ БИО ЗАВЕРШЕНО. Товаров: {total_products}, Время: {duration}", flush=True)
 
     return jsonify({"message": "Данные успешно сохранены в базу", "total_products": total_products})
 
@@ -309,37 +310,42 @@ def run_update_stocks_script():
     Запускает скрипт обновления остатков после завершения сбора данных
     """
     start_time = datetime.now()
-    print(f"🔄 [{start_time}] ОБНОВЛЕНИЕ ОСТАТКОВ И ЦЕН")
+    print(f"🔄 [{start_time}] ОБНОВЛЕНИЕ ОСТАТКОВ И ЦЕН", flush=True)
     
     try:
-        # Запускаем скрипт update_stocks_bio.py
+        # Запускаем скрипт update_stocks_bio.py с выводом в реальном времени
         result = subprocess.run(
             ['python', 'update_stocks_bio.py'],
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
             text=True,
-            cwd=os.getcwd()
+            cwd=os.getcwd(),
+            bufsize=1,
+            universal_newlines=True
         )
         
         end_time = datetime.now()
         duration = end_time - start_time
         
         if result.returncode == 0:
-            print(f"✅ [{end_time}] Скрипт обновления остатков успешно завершён")
-            print(f"✅ [{end_time}] Продолжительность: {duration}")
-            print(f"📄 Вывод скрипта:")
-            print(f"📄 {result.stdout}")
+            print(f"✅ [{end_time}] Скрипт обновления остатков успешно завершён", flush=True)
+            print(f"✅ [{end_time}] Продолжительность: {duration}", flush=True)
+            if result.stdout:
+                print(f"📄 Вывод скрипта:", flush=True)
+                print(f"📄 {result.stdout}", flush=True)
         else:
-            print(f"❌ [{end_time}] Ошибка в скрипте обновления остатков")
-            print(f"❌ [{end_time}] Продолжительность до ошибки: {duration}")
-            print(f"📄 Ошибка скрипта:")
-            print(f"📄 {result.stderr}")
+            print(f"❌ [{end_time}] Ошибка в скрипте обновления остатков", flush=True)
+            print(f"❌ [{end_time}] Продолжительность до ошибки: {duration}", flush=True)
+            if result.stdout:
+                print(f"📄 Ошибка скрипта:", flush=True)
+                print(f"📄 {result.stdout}", flush=True)
             
     except Exception as e:
         end_time = datetime.now()
         duration = end_time - start_time
-        print(f"❌ [{end_time}] Ошибка запуска скрипта обновления")
-        print(f"❌ [{end_time}] Продолжительность до ошибки: {duration}")
-        print(f"❌ [{end_time}] Ошибка: {e}")
+        print(f"❌ [{end_time}] Ошибка запуска скрипта обновления", flush=True)
+        print(f"❌ [{end_time}] Продолжительность до ошибки: {duration}", flush=True)
+        print(f"❌ [{end_time}] Ошибка: {e}", flush=True)
 
 
 def scheduled_data_update():
@@ -347,30 +353,28 @@ def scheduled_data_update():
     Функция для автоматического обновления данных в 01:00 по времени Франкфурта
     """
     start_time = datetime.now()
-    print(f"🌅 [{start_time}] ========================================")
-    print(f"🌅 [{start_time}] НАЧАЛО АВТОМАТИЧЕСКОГО ОБНОВЛЕНИЯ ДАННЫХ")
-    print(f"🌅 [{start_time}] ========================================")
+    print(f"🌅 [{start_time}] НАЧАЛО АВТОМАТИЧЕСКОГО ОБНОВЛЕНИЯ ДАННЫХ", flush=True)
     
     try:
         # Обновляем курсы валют
-        print(f"💱 [{datetime.now()}] Обновляем курсы валют...")
+        print(f"💱 [{datetime.now()}] Обновляем курсы валют...", flush=True)
         valute.valute()
         importlib.reload(info)
-        print(f"💱 [{datetime.now()}] Курсы валют обновлены: {info.exchange_rates}")
+        print(f"💱 [{datetime.now()}] Курсы валют обновлены: {info.exchange_rates}", flush=True)
         
         # Инициализируем базу данных
-        print(f"🗄️ [{datetime.now()}] Инициализируем базу данных...")
+        print(f"🗄️ [{datetime.now()}] Инициализируем базу данных...", flush=True)
         init_db()
         
         # Получаем категории
-        print(f"📂 [{datetime.now()}] Получаем категории товаров...")
+        print(f"📂 [{datetime.now()}] Получаем категории товаров...", flush=True)
         categories_response = fetch_categories()
         if "error" in categories_response:
-            print(f"❌ [{datetime.now()}] Ошибка получения категорий: {categories_response['error']}")
+            print(f"❌ [{datetime.now()}] Ошибка получения категорий: {categories_response['error']}", flush=True)
             return
         
         # Обрабатываем товары
-        print(f"🔄 [{datetime.now()}] Начинаем обработку товаров...")
+        print(f"🔄 [{datetime.now()}] Начинаем обработку товаров...", flush=True)
         total_products = 0
         
         for category_group in categories_response:
@@ -396,33 +400,25 @@ def scheduled_data_update():
                             save_product_to_db(product)
                             total_products += 1
         
-        print(f"✅ [{datetime.now()}] Данные успешно сохранены в базу. Всего товаров: {total_products}")
+        print(f"✅ [{datetime.now()}] Данные успешно сохранены в базу. Всего товаров: {total_products}", flush=True)
         
         # Запускаем скрипт обновления остатков
-        print(f"🔄 [{datetime.now()}] Запускаем обновление остатков...")
+        print(f"🔄 [{datetime.now()}] Запускаем обновление остатков...", flush=True)
         run_update_stocks_script()
         
         # Выводим итоговую информацию
         end_time = datetime.now()
         duration = end_time - start_time
-        print(f"🎉 [{end_time}] ========================================")
-        print(f"🎉 [{end_time}] АВТОМАТИЧЕСКОЕ ОБНОВЛЕНИЕ УСПЕШНО ЗАВЕРШЕНО!")
-        print(f"🎉 [{end_time}] Время начала: {start_time}")
-        print(f"🎉 [{end_time}] Время завершения: {end_time}")
-        print(f"🎉 [{end_time}] Общая продолжительность: {duration}")
-        print(f"🎉 [{end_time}] Обработано товаров: {total_products}")
-        print(f"🎉 [{end_time}] ========================================")
+        print(f"🎉 [{end_time}] АВТОМАТИЧЕСКОЕ ОБНОВЛЕНИЕ УСПЕШНО ЗАВЕРШЕНО!", flush=True)
+        print(f"🎉 [{end_time}] Общая продолжительность: {duration}", flush=True)
+        print(f"🎉 [{end_time}] Обработано товаров: {total_products}", flush=True)
         
     except Exception as e:
         end_time = datetime.now()
         duration = end_time - start_time
-        print(f"❌ [{end_time}] ========================================")
-        print(f"❌ [{end_time}] ОШИБКА АВТОМАТИЧЕСКОГО ОБНОВЛЕНИЯ!")
-        print(f"❌ [{end_time}] Время начала: {start_time}")
-        print(f"❌ [{end_time}] Время ошибки: {end_time}")
-        print(f"❌ [{end_time}] Продолжительность до ошибки: {duration}")
-        print(f"❌ [{end_time}] Ошибка: {e}")
-        print(f"❌ [{end_time}] ========================================")
+        print(f"❌ [{end_time}] ОШИБКА АВТОМАТИЧЕСКОГО ОБНОВЛЕНИЯ!", flush=True)
+        print(f"❌ [{end_time}] Продолжительность до ошибки: {duration}", flush=True)
+        print(f"❌ [{end_time}] Ошибка: {e}", flush=True)
 
 
 def start_scheduler():
@@ -434,7 +430,7 @@ def start_scheduler():
         # Если сервер в UTC, то это 0:00 UTC (полночь)
         schedule.every().day.at("00:00").do(scheduled_data_update)
         
-        print(f"⏰ [{datetime.now()}] Планировщик запущен. Следующее обновление в 00:00 UTC")
+        print(f"⏰ [{datetime.now()}] Планировщик запущен. Следующее обновление в 00:00 UTC", flush=True)
         
         while True:
             schedule.run_pending()
@@ -443,7 +439,7 @@ def start_scheduler():
     # Запускаем планировщик в отдельном потоке
     scheduler_thread = threading.Thread(target=run_scheduler, daemon=True)
     scheduler_thread.start()
-    print(f"🚀 [{datetime.now()}] Планировщик задач запущен в фоновом режиме")
+    print(f"🚀 [{datetime.now()}] Планировщик задач запущен в фоновом режиме", flush=True)
 
 
 if __name__ == '__main__':
@@ -451,9 +447,9 @@ if __name__ == '__main__':
     start_scheduler()
     
     # Запускаем обновление данных при старте приложения
-    print(f"🚀 [{datetime.now()}] СТАРТ ПОЛУЧЕНИЯ ДАННЫХ ИЗ БИО")
+    print(f"🚀 [{datetime.now()}] СТАРТ ПОЛУЧЕНИЯ ДАННЫХ ИЗ БИО", flush=True)
     scheduled_data_update()
     
     # Запускаем Flask сервер
-    print(f"🌐 [{datetime.now()}] Flask сервер запускается на порту 5000...")
+    print(f"🌐 [{datetime.now()}] Flask сервер запускается на порту 5000...", flush=True)
     app.run(debug=False, host='0.0.0.0', port=5000)
