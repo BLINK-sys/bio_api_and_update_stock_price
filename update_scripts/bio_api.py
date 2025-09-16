@@ -1,6 +1,21 @@
 # Тут идёт выгрузка данных из Bio  по API  и сохранение в базу (с конвертацией цен по формуле)
 import math
 import sys
+import os
+import logging
+
+# Настройка переменных окружения для Render
+os.environ.setdefault("PYTHONUNBUFFERED", "1")
+os.environ.setdefault("PYTHONIOENCODING", "UTF-8")
+
+# Настройка логирования для Render
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)s | %(message)s",
+    handlers=[logging.StreamHandler(sys.stdout)],
+    force=True,  # сбросить чужие хэндлеры (например, werkzeug)
+)
+log = logging.getLogger("bio")
 
 import requests
 import sqlite3
@@ -12,11 +27,10 @@ import schedule
 import time
 import threading
 import subprocess
-import os
 from datetime import datetime
 
-# Принудительно выводим лог о запуске модуля
-print(f"📦 [{datetime.now()}] Модуль bio_api.py загружен", flush=True)
+# Логируем загрузку модуля
+log.info("📦 Модуль bio_api.py загружен")
 
 app = Flask(__name__)
 
@@ -33,7 +47,7 @@ valute.valute()
 # Перезагружаем модуль info для получения обновленных курсов
 import importlib
 importlib.reload(info)
-print(f"💱 [{datetime.now()}] Курс валют обновлён: {info.exchange_rates}", flush=True)
+log.info(f"💱 Курс валют обновлён: {info.exchange_rates}")
 
 
 def calculate_delivery_cost(weight_kg, volume_m3):
@@ -137,7 +151,7 @@ def init_db():
     
     # Очищаем старые данные перед записью новых
     cursor.execute("DELETE FROM products")
-    print(f"🗑️ [{datetime.now()}] Старые данные из базы удалены", flush=True)
+    log.info("🗑️ Старые данные из базы удалены")
     
     conn.commit()
     conn.close()
@@ -267,7 +281,7 @@ def fetch_product_details(product_code):
 @app.route('/products', methods=['GET'])
 def get_all_products():
     start_time = datetime.now()
-    print(f"🚀 [{start_time}] СТАРТ ПОЛУЧЕНИЯ ДАННЫХ ИЗ БИО", flush=True)
+    log.info("🚀 СТАРТ ПОЛУЧЕНИЯ ДАННЫХ ИЗ БИО")
     
     init_db()
 
@@ -303,7 +317,7 @@ def get_all_products():
     
     end_time = datetime.now()
     duration = end_time - start_time
-    print(f"✅ [{end_time}] ПОЛУЧЕНИЕ ДАННЫХ ИЗ БИО ЗАВЕРШЕНО. Товаров: {total_products}, Время: {duration}", flush=True)
+    log.info(f"✅ ПОЛУЧЕНИЕ ДАННЫХ ИЗ БИО ЗАВЕРШЕНО. Товаров: {total_products}, Время: {duration}")
 
     return jsonify({"message": "Данные успешно сохранены в базу", "total_products": total_products})
 
@@ -313,42 +327,40 @@ def run_update_stocks_script():
     Запускает скрипт обновления остатков после завершения сбора данных
     """
     start_time = datetime.now()
-    print(f"🔄 [{start_time}] ОБНОВЛЕНИЕ ОСТАТКОВ И ЦЕН", flush=True)
+    log.info("🔄 ОБНОВЛЕНИЕ ОСТАТКОВ И ЦЕН")
     
     try:
-        # Запускаем скрипт update_stocks_bio.py с выводом в реальном времени
-        result = subprocess.run(
-            ['python', 'update_stocks_bio.py'],
+        # Запускаем скрипт update_stocks_bio.py с стримингом вывода
+        proc = subprocess.Popen(
+            ['python', '-u', 'update_stocks_bio.py'],
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
-            cwd=os.getcwd(),
             bufsize=1,
-            universal_newlines=True
+            cwd=os.getcwd()
         )
         
+        # Читаем построчно и сразу пробрасываем в лог
+        for line in proc.stdout:
+            log.info("update_stocks | %s", line.rstrip())
+        
+        rc = proc.wait()
         end_time = datetime.now()
         duration = end_time - start_time
         
-        if result.returncode == 0:
-            print(f"✅ [{end_time}] Скрипт обновления остатков успешно завершён", flush=True)
-            print(f"✅ [{end_time}] Продолжительность: {duration}", flush=True)
-            if result.stdout:
-                print(f"📄 Вывод скрипта:", flush=True)
-                print(f"📄 {result.stdout}", flush=True)
+        if rc == 0:
+            log.info("✅ Скрипт обновления остатков успешно завершён")
+            log.info(f"✅ Продолжительность: {duration}")
         else:
-            print(f"❌ [{end_time}] Ошибка в скрипте обновления остатков", flush=True)
-            print(f"❌ [{end_time}] Продолжительность до ошибки: {duration}", flush=True)
-            if result.stdout:
-                print(f"📄 Ошибка скрипта:", flush=True)
-                print(f"📄 {result.stdout}", flush=True)
+            log.error("❌ Скрипт обновления остатков завершился с кодом %s", rc)
+            log.error(f"❌ Продолжительность до ошибки: {duration}")
             
     except Exception as e:
         end_time = datetime.now()
         duration = end_time - start_time
-        print(f"❌ [{end_time}] Ошибка запуска скрипта обновления", flush=True)
-        print(f"❌ [{end_time}] Продолжительность до ошибки: {duration}", flush=True)
-        print(f"❌ [{end_time}] Ошибка: {e}", flush=True)
+        log.error("❌ Ошибка запуска скрипта обновления")
+        log.error(f"❌ Продолжительность до ошибки: {duration}")
+        log.exception("❌ Ошибка: %s", e)
 
 
 def scheduled_data_update():
@@ -356,31 +368,29 @@ def scheduled_data_update():
     Функция для автоматического обновления данных в 01:00 по времени Франкфурта
     """
     start_time = datetime.now()
-    print(f"🌅 [{start_time}] НАЧАЛО АВТОМАТИЧЕСКОГО ОБНОВЛЕНИЯ ДАННЫХ", flush=True)
+    log.info("🌅 НАЧАЛО АВТОМАТИЧЕСКОГО ОБНОВЛЕНИЯ ДАННЫХ")
     
     try:
-        print(f"🔍 [{datetime.now()}] Функция scheduled_data_update вызвана", flush=True)
-    
-    try:
+        log.info("🔍 Функция scheduled_data_update вызвана")
         # Обновляем курсы валют
-        print(f"💱 [{datetime.now()}] Обновляем курсы валют...", flush=True)
+        log.info("💱 Обновляем курсы валют...")
         valute.valute()
         importlib.reload(info)
-        print(f"💱 [{datetime.now()}] Курсы валют обновлены: {info.exchange_rates}", flush=True)
+        log.info(f"💱 Курсы валют обновлены: {info.exchange_rates}")
         
         # Инициализируем базу данных
-        print(f"🗄️ [{datetime.now()}] Инициализируем базу данных...", flush=True)
+        log.info("🗄️ Инициализируем базу данных...")
         init_db()
         
         # Получаем категории
-        print(f"📂 [{datetime.now()}] Получаем категории товаров...", flush=True)
+        log.info("📂 Получаем категории товаров...")
         categories_response = fetch_categories()
         if "error" in categories_response:
-            print(f"❌ [{datetime.now()}] Ошибка получения категорий: {categories_response['error']}", flush=True)
+            log.error(f"❌ Ошибка получения категорий: {categories_response['error']}")
             return
         
         # Обрабатываем товары
-        print(f"🔄 [{datetime.now()}] Начинаем обработку товаров...", flush=True)
+        log.info("🔄 Начинаем обработку товаров...")
         total_products = 0
         
         for category_group in categories_response:
@@ -406,27 +416,25 @@ def scheduled_data_update():
                             save_product_to_db(product)
                             total_products += 1
         
-        print(f"✅ [{datetime.now()}] Данные успешно сохранены в базу. Всего товаров: {total_products}", flush=True)
+        log.info(f"✅ Данные успешно сохранены в базу. Всего товаров: {total_products}")
         
         # Запускаем скрипт обновления остатков
-        print(f"🔄 [{datetime.now()}] Запускаем обновление остатков...", flush=True)
+        log.info("🔄 Запускаем обновление остатков...")
         run_update_stocks_script()
         
         # Выводим итоговую информацию
         end_time = datetime.now()
         duration = end_time - start_time
-        print(f"🎉 [{end_time}] АВТОМАТИЧЕСКОЕ ОБНОВЛЕНИЕ УСПЕШНО ЗАВЕРШЕНО!", flush=True)
-        print(f"🎉 [{end_time}] Общая продолжительность: {duration}", flush=True)
-        print(f"🎉 [{end_time}] Обработано товаров: {total_products}", flush=True)
+        log.info("🎉 АВТОМАТИЧЕСКОЕ ОБНОВЛЕНИЕ УСПЕШНО ЗАВЕРШЕНО!")
+        log.info(f"🎉 Общая продолжительность: {duration}")
+        log.info(f"🎉 Обработано товаров: {total_products}")
         
     except Exception as e:
         end_time = datetime.now()
         duration = end_time - start_time
-        print(f"❌ [{end_time}] ОШИБКА АВТОМАТИЧЕСКОГО ОБНОВЛЕНИЯ!", flush=True)
-        print(f"❌ [{end_time}] Продолжительность до ошибки: {duration}", flush=True)
-        print(f"❌ [{end_time}] Ошибка: {e}", flush=True)
-        import traceback
-        print(f"❌ [{end_time}] Traceback: {traceback.format_exc()}", flush=True)
+        log.error("❌ ОШИБКА АВТОМАТИЧЕСКОГО ОБНОВЛЕНИЯ!")
+        log.error(f"❌ Продолжительность до ошибки: {duration}")
+        log.exception("❌ Ошибка: %s", e)
 
 
 def start_scheduler():
@@ -438,7 +446,9 @@ def start_scheduler():
         # Если сервер в UTC, то это 0:00 UTC (полночь)
         schedule.every().day.at("00:00").do(scheduled_data_update)
         
-        print(f"⏰ [{datetime.now()}] Планировщик запущен. Следующее обновление в 00:00 UTC", flush=True)
+        log.info("⏰ Планировщик запущен. Следующее обновление в 00:00 UTC")
+        log.info(f"⏰ Текущее время: {datetime.now()}")
+        log.info(f"⏰ Часовой пояс: {time.tzname}")
         
         while True:
             schedule.run_pending()
@@ -447,30 +457,30 @@ def start_scheduler():
     # Запускаем планировщик в отдельном потоке
     scheduler_thread = threading.Thread(target=run_scheduler, daemon=True)
     scheduler_thread.start()
-    print(f"🚀 [{datetime.now()}] Планировщик задач запущен в фоновом режиме", flush=True)
+    log.info("🚀 Планировщик задач запущен в фоновом режиме")
 
 
 if __name__ == '__main__':
     try:
-        # Принудительно выводим лог о запуске
-        print(f"🎯 [{datetime.now()}] ЗАПУСК ПРИЛОЖЕНИЯ BIO API", flush=True)
-        sys.stdout.flush()
+        # Логируем запуск приложения
+        log.info("🎯 ЗАПУСК ПРИЛОЖЕНИЯ BIO API")
         
         # Запускаем планировщик при старте приложения
         start_scheduler()
         
         # Запускаем обновление данных при старте приложения
-        print(f"🚀 [{datetime.now()}] СТАРТ ПОЛУЧЕНИЯ ДАННЫХ ИЗ БИО", flush=True)
-        sys.stdout.flush()
+        log.info("🚀 СТАРТ ПОЛУЧЕНИЯ ДАННЫХ ИЗ БИО")
         scheduled_data_update()
         
-        # Запускаем Flask сервер
-        print(f"🌐 [{datetime.now()}] Flask сервер запускается на порту 5000...", flush=True)
-        print(f"🌐 [{datetime.now()}] Сервер готов к работе!", flush=True)
-        sys.stdout.flush()
-        app.run(debug=False, host='0.0.0.0', port=5000)
+        # Для Background Worker Flask сервер не обязателен
+        # Если нужен HTTP-эндпоинт, раскомментируйте следующую строку
+        # app.run(debug=False, host='0.0.0.0', port=5000)
+        
+        # Для Background Worker просто держим процесс живым
+        log.info("🌐 Приложение готово к работе (Background Worker)")
+        while True:
+            time.sleep(60)  # Проверяем каждую минуту
+            
     except Exception as e:
-        print(f"❌ [{datetime.now()}] КРИТИЧЕСКАЯ ОШИБКА: {e}", flush=True)
-        import traceback
-        print(f"❌ [{datetime.now()}] Traceback: {traceback.format_exc()}", flush=True)
-        sys.stdout.flush()
+        log.error("❌ КРИТИЧЕСКАЯ ОШИБКА: %s", e)
+        log.exception("❌ Traceback:")
