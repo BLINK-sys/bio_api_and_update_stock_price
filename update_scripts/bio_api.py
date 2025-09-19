@@ -10,12 +10,23 @@ os.environ.setdefault("PYTHONIOENCODING", "UTF-8")
 
 # Настройка логирования для Render
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,
     format="%(asctime)s | %(levelname)s | %(message)s",
     handlers=[logging.StreamHandler(sys.stdout)],
     force=True,  # сбросить чужие хэндлеры (например, werkzeug)
 )
 log = logging.getLogger("bio")
+
+# Принудительно выводим информацию о среде
+log.info("=" * 50)
+log.info("🔧 ОТЛАДОЧНАЯ ИНФОРМАЦИЯ")
+log.info(f"🔧 Python версия: {sys.version}")
+log.info(f"🔧 Рабочая директория: {os.getcwd()}")
+log.info(f"🔧 PYTHONUNBUFFERED: {os.environ.get('PYTHONUNBUFFERED', 'НЕ УСТАНОВЛЕН')}")
+log.info(f"🔧 PYTHONIOENCODING: {os.environ.get('PYTHONIOENCODING', 'НЕ УСТАНОВЛЕН')}")
+log.info(f"🔧 TZ: {os.environ.get('TZ', 'НЕ УСТАНОВЛЕН')}")
+log.info(f"🔧 RENDER: {os.environ.get('RENDER', 'НЕ УСТАНОВЛЕН')}")
+log.info("=" * 50)
 
 import requests
 import sqlite3
@@ -242,13 +253,16 @@ def save_product_to_db(product):
 
 def fetch_categories():
     url = f"{BASE_URL}/categories"
+    log.info(f"🌐 Запрашиваем категории: {url}")
     try:
-        response = requests.post(url, json=AUTH_CREDENTIALS)
+        response = requests.post(url, json=AUTH_CREDENTIALS, timeout=30)
+        log.info(f"📡 Ответ сервера: {response.status_code}")
         response.raise_for_status()
         categories_data = response.json()
+        log.info(f"✅ Получено категорий: {len(categories_data) if isinstance(categories_data, list) else 'ошибка'}")
         return categories_data
     except Exception as e:
-        print(f"❌ [{datetime.now()}] Ошибка получения категорий: {e}")
+        log.error(f"❌ Ошибка получения категорий: {e}")
         return {"error": str(e)}
 
 
@@ -261,7 +275,7 @@ def fetch_products_by_category(category_id):
         products_data = response.json()
         return products_data
     except Exception as e:
-        print(f"❌ [{datetime.now()}] Ошибка получения товаров категории {category_id}: {e}")
+        log.error(f"❌ Ошибка получения товаров категории {category_id}: {e}")
         return {"error": str(e)}
 
 
@@ -274,7 +288,7 @@ def fetch_product_details(product_code):
         data = response.json()
         return data
     except Exception as e:
-        print(f"❌ [{datetime.now()}] Ошибка получения деталей для {product_code}: {e}")
+        log.error(f"❌ Ошибка получения деталей для {product_code}: {e}")
         return {}
 
 
@@ -287,7 +301,7 @@ def get_all_products():
 
     categories_response = fetch_categories()
     if "error" in categories_response:
-        print(f"❌ [{datetime.now()}] Критическая ошибка получения категорий")
+        log.error("❌ Критическая ошибка получения категорий")
         return jsonify(categories_response), 500
 
     total_products = 0
@@ -464,6 +478,16 @@ if __name__ == '__main__':
     try:
         # Логируем запуск приложения
         log.info("🎯 ЗАПУСК ПРИЛОЖЕНИЯ BIO API")
+        log.info("🔧 Проверяем доступность модулей...")
+        
+        # Проверяем импорты
+        try:
+            log.info("✅ requests импортирован успешно")
+            log.info("✅ sqlite3 импортирован успешно")
+            log.info("✅ flask импортирован успешно")
+            log.info("✅ schedule импортирован успешно")
+        except Exception as e:
+            log.error(f"❌ Ошибка импорта: {e}")
         
         # Запускаем планировщик при старте приложения
         start_scheduler()
