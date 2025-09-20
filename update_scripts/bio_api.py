@@ -350,6 +350,8 @@ def run_update_stocks_script():
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
+            encoding='utf-8',
+            errors='replace',
             bufsize=1,
             cwd=os.getcwd()
         )
