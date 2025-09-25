@@ -10,23 +10,22 @@ os.environ.setdefault("PYTHONIOENCODING", "UTF-8")
 
 # Настройка логирования для Render
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.INFO,  # Изменено с DEBUG на INFO
     format="%(asctime)s | %(levelname)s | %(message)s",
     handlers=[logging.StreamHandler(sys.stdout)],
     force=True,  # сбросить чужие хэндлеры (например, werkzeug)
 )
+
+# Отключаем лишние логи от внешних библиотек
+logging.getLogger("urllib3").setLevel(logging.WARNING)
+logging.getLogger("requests").setLevel(logging.WARNING)
+logging.getLogger("urllib3.connectionpool").setLevel(logging.WARNING)
+logging.getLogger("requests.packages.urllib3").setLevel(logging.WARNING)
+
 log = logging.getLogger("bio")
 
-# Принудительно выводим информацию о среде
-log.info("=" * 50)
-log.info("🔧 ОТЛАДОЧНАЯ ИНФОРМАЦИЯ")
-log.info(f"🔧 Python версия: {sys.version}")
-log.info(f"🔧 Рабочая директория: {os.getcwd()}")
-log.info(f"🔧 PYTHONUNBUFFERED: {os.environ.get('PYTHONUNBUFFERED', 'НЕ УСТАНОВЛЕН')}")
-log.info(f"🔧 PYTHONIOENCODING: {os.environ.get('PYTHONIOENCODING', 'НЕ УСТАНОВЛЕН')}")
-log.info(f"🔧 TZ: {os.environ.get('TZ', 'НЕ УСТАНОВЛЕН')}")
-log.info(f"🔧 RENDER: {os.environ.get('RENDER', 'НЕ УСТАНОВЛЕН')}")
-log.info("=" * 50)
+# Минимальная информация о запуске
+log.info("🚀 BIO API запущен")
 
 import requests
 import sqlite3
@@ -41,7 +40,7 @@ import subprocess
 from datetime import datetime
 
 # Логируем загрузку модуля
-log.info("📦 Модуль bio_api.py загружен")
+# Модуль загружен
 
 app = Flask(__name__)
 
@@ -59,6 +58,11 @@ valute.valute()
 import importlib
 importlib.reload(info)
 log.info(f"💱 Курс валют обновлён: {info.exchange_rates}")
+
+# Обновляем курсы BIO
+import valute_bio
+valute_bio.get_bio_rates()
+log.info("💱 Курсы BIO обновлены")
 
 
 def calculate_delivery_cost(weight_kg, volume_m3):
@@ -175,6 +179,14 @@ def save_product_to_db(product):
 
     # Курсы валют
     exchange_rates = info.exchange_rates
+    
+    # Получаем курсы BIO для конвертации в рубли
+    try:
+        import bio_rates
+        bio_rates_dict = bio_rates.bio_rates
+    except ImportError:
+        # Если файл bio_rates.py не существует, используем значения по умолчанию
+        bio_rates_dict = {'EUR': 109.0, 'USD': 93.0}
 
     # Преобразование валюты
     price_currency = product.get("priceCurrency", "RUB").replace("УЕ ", "").replace(" ВН", "").replace(" 1.5", "")
@@ -211,8 +223,21 @@ def save_product_to_db(product):
         # Рассчитываем стоимость доставки
         delivery_cost = calculate_delivery_cost(weight_gross, volume)
         
-        # Применяем новую формулу: (X/1.2*курс*1.12+доставка)*1.18
-        converted_price = original_price / 1.2 * exchange_rates.get(price_currency, 1) * 1.12
+        # Двухэтапная конвертация:
+        # Этап 1: BIO курсы (EUR/USD -> RUB)
+        # Этап 2: МИГ курсы (RUB -> KZT)
+        
+        if price_currency in ['EUR', 'USD']:
+            # Этап 1: Конвертируем в рубли по курсам BIO
+            price_in_rubles = original_price * bio_rates_dict.get(price_currency, 1)
+            # Этап 2: Конвертируем рубли в тенге по курсам МИГ
+            price_in_tenge = price_in_rubles * exchange_rates.get('RUB', 1)
+        else:
+            # Если уже в рублях, конвертируем только в тенге
+            price_in_tenge = original_price * exchange_rates.get(price_currency, 1)
+        
+        # Применяем формулу: (X/1.2*1.12+доставка)*1.18
+        converted_price = price_in_tenge / 1.2 * 1.12
         converted_price = converted_price + delivery_cost
         converted_price = converted_price * 1.18
         
@@ -253,10 +278,8 @@ def save_product_to_db(product):
 
 def fetch_categories():
     url = f"{BASE_URL}/categories"
-    log.info(f"🌐 Запрашиваем категории: {url}")
     try:
         response = requests.post(url, json=AUTH_CREDENTIALS, timeout=30)
-        log.info(f"📡 Ответ сервера: {response.status_code}")
         response.raise_for_status()
         categories_data = response.json()
         log.info(f"✅ Получено категорий: {len(categories_data) if isinstance(categories_data, list) else 'ошибка'}")
@@ -341,7 +364,7 @@ def run_update_stocks_script():
     Запускает скрипт обновления остатков после завершения сбора данных
     """
     start_time = datetime.now()
-    log.info("🔄 ОБНОВЛЕНИЕ ОСТАТКОВ И ЦЕН")
+    log.info("🔄 Обновление остатков...")
     
     try:
         # Запускаем скрипт update_stocks_bio.py с стримингом вывода
@@ -384,29 +407,26 @@ def scheduled_data_update():
     Функция для автоматического обновления данных в 01:00 по времени Франкфурта
     """
     start_time = datetime.now()
-    log.info("🌅 НАЧАЛО АВТОМАТИЧЕСКОГО ОБНОВЛЕНИЯ ДАННЫХ")
+    log.info("🔄 Начинаем обновление данных")
     
     try:
-        log.info("🔍 Функция scheduled_data_update вызвана")
         # Обновляем курсы валют
-        log.info("💱 Обновляем курсы валют...")
         valute.valute()
         importlib.reload(info)
-        log.info(f"💱 Курсы валют обновлены: {info.exchange_rates}")
+        log.info(f"💱 Курсы обновлены: {info.exchange_rates}")
         
         # Инициализируем базу данных
-        log.info("🗄️ Инициализируем базу данных...")
         init_db()
         
         # Получаем категории
-        log.info("📂 Получаем категории товаров...")
+        log.info("📂 Получаем категории...")
         categories_response = fetch_categories()
         if "error" in categories_response:
             log.error(f"❌ Ошибка получения категорий: {categories_response['error']}")
             return
         
         # Обрабатываем товары
-        log.info("🔄 Начинаем обработку товаров...")
+        log.info("🔄 Обработка товаров...")
         total_products = 0
         
         for category_group in categories_response:
@@ -435,7 +455,7 @@ def scheduled_data_update():
         log.info(f"✅ Данные успешно сохранены в базу. Всего товаров: {total_products}")
         
         # Запускаем скрипт обновления остатков
-        log.info("🔄 Запускаем обновление остатков...")
+        log.info("🔄 Обновление остатков...")
         run_update_stocks_script()
         
         # Выводим итоговую информацию

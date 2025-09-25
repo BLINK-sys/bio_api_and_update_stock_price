@@ -72,29 +72,17 @@ def send_stock_with_price_to_server(stock_data, chunk_size=10):
             try:
                 response = requests.post(url, json=payload, timeout=30)
                 if response.status_code == 200:
-                    try:
-                        log.info(f"Порция {chunk_index}/{total_chunks} успешно отправлена.")
-                        log.info(f"Статус-код: {response.status_code}")
-                        log.info(f"Ответ сервера: {response.json()}")
-                    except Exception as e:
-                        print("Ошибка обработки JSON:", str(e))
-                        print("Текст ответа:", response.text)
                     break  # Успешно, переходим к следующему чанку
                 else:
-                    log.error(f"Ошибка {response.status_code}. Текст ответа сервера: {response.text}")
                     retry_count += 1
-                    log.info(f"Попытка {retry_count} через 30 секунд...")
                     time.sleep(30)
             except requests.exceptions.Timeout:
-                log.error(f"Таймаут. Попытка {retry_count + 1} через 30 секунд...")
                 retry_count += 1
                 time.sleep(30)
             except requests.exceptions.ConnectionError as e:
-                log.error(f"Ошибка соединения: {str(e)}. Попытка {retry_count + 1} через 30 секунд...")
                 retry_count += 1
                 time.sleep(30)
             except requests.exceptions.RequestException as e:
-                log.error(f"Общая ошибка: {str(e)}. Попытка {retry_count + 1} через 30 секунд...")
                 retry_count += 1
                 time.sleep(30)
 
@@ -103,7 +91,6 @@ def send_stock_with_price_to_server(stock_data, chunk_size=10):
             error_message += f"Ошибка: {response.text if 'response' in locals() else 'Нет ответа от сервера'}\n\n"
             with open("failed_stocks.txt", "a", encoding="utf-8") as file:
                 file.write(error_message)
-            log.error(f"Порция {chunk_index}/{total_chunks} записана в failed_stocks.txt из-за ошибок.")
 
         chunk_index += 1
 
@@ -112,27 +99,14 @@ if __name__ == "__main__":
     import sys
     import os
     import logging
-    from datetime import datetime
     
     # Настройка переменных окружения для Render
     os.environ.setdefault("PYTHONUNBUFFERED", "1")
     os.environ.setdefault("PYTHONIOENCODING", "UTF-8")
     
-    # Настройка логирования для Render
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s | %(levelname)s | %(message)s",
-        handlers=[logging.StreamHandler(sys.stdout)],
-        force=True,
-    )
-    log = logging.getLogger("update_stocks")
-    
-    log.info("🔄 НАЧАЛО ОБНОВЛЕНИЯ ОСТАТКОВ И ЦЕН")
+    # Отключаем все логи
+    logging.disable(logging.CRITICAL)
     
     stock_data = fetch_stock_data_with_price_from_db()
-    log.info(f"📊 Получено {len(stock_data)} товаров для обновления")
-    
     send_stock_with_price_to_server(stock_data, chunk_size=10)  # Размер чанка = 10 записей
-    
-    log.info("✅ ОБНОВЛЕНИЕ ОСТАТКОВ И ЦЕН ЗАВЕРШЕНО")
     time.sleep(5)  # Задержка между отправками чанков
