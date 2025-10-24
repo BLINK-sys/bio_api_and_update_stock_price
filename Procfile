@@ -1,1 +1,1 @@
-web: python -u bio_api.py
+worker: python -u bio_api.py
