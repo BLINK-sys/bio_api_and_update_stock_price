@@ -42,8 +42,8 @@ def fetch_stock_data_with_price_from_db():
         conn.close()
         return []
 
-    # Извлекаем артикул, остатки, цену и описание
-    cursor.execute("SELECT code, inStock, price, description FROM products")
+    # Извлекаем артикул, остатки, цену, описание и название товара
+    cursor.execute("SELECT code, inStock, price, description, name FROM products")
     rows = cursor.fetchall()
 
     stock_data = []
@@ -60,6 +60,7 @@ def fetch_stock_data_with_price_from_db():
         
         stock_data.append({
             "code": row["code"],
+            "name": row["name"],  # Добавляем имя товара для удаления дубликатов по имени на стороне Bitrix
             "inStock": row["inStock"],
             "price": rounded_price,  # Округляем цену до 100 вверх
             "description": description

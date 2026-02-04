@@ -38,6 +38,8 @@ import time
 import threading
 import subprocess
 from datetime import datetime
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 # Логируем загрузку модуля
 # Модуль загружен
@@ -51,6 +53,22 @@ AUTH_CREDENTIALS = {
 }
 
 DB_PATH = "products.db"
+
+# Настройка сессии requests с повторными попытками и таймаутами
+session = requests.Session()
+retry_strategy = Retry(
+    total=3,
+    backoff_factor=1,
+    status_forcelist=[429, 500, 502, 503, 504],
+    allowed_methods=["POST"]
+)
+adapter = HTTPAdapter(max_retries=retry_strategy)
+session.mount("http://", adapter)
+session.mount("https://", adapter)
+
+# Блокировка для предотвращения множественных одновременных запусков
+update_lock = threading.Lock()
+is_updating = False
 
 # Обновляем курсы валют
 valute.valute()
@@ -236,10 +254,10 @@ def save_product_to_db(product):
             # Если уже в рублях, конвертируем только в тенге
             price_in_tenge = original_price * exchange_rates.get(price_currency, 1)
         
-        # Применяем формулу: (X/1.2*1.12+доставка)*1.18
-        converted_price = price_in_tenge / 1.2 * 1.12
+        # Применяем формулу: (X/1.2*1.12+доставка)*1.16
+        converted_price = price_in_tenge / 1.22 * 1.16
         converted_price = converted_price + delivery_cost
-        converted_price = converted_price * 1.18
+        converted_price = converted_price * 1.16
         
         price = int(round(converted_price))
         price_currency = "KZT"
@@ -279,11 +297,14 @@ def save_product_to_db(product):
 def fetch_categories():
     url = f"{BASE_URL}/categories"
     try:
-        response = requests.post(url, json=AUTH_CREDENTIALS, timeout=30)
+        response = session.post(url, json=AUTH_CREDENTIALS, timeout=(10, 30))
         response.raise_for_status()
         categories_data = response.json()
         log.info(f"✅ Получено категорий: {len(categories_data) if isinstance(categories_data, list) else 'ошибка'}")
         return categories_data
+    except requests.exceptions.Timeout:
+        log.error(f"❌ Таймаут при получении категорий")
+        return {"error": "Timeout"}
     except Exception as e:
         log.error(f"❌ Ошибка получения категорий: {e}")
         return {"error": str(e)}
@@ -293,70 +314,119 @@ def fetch_products_by_category(category_id):
     url = f"{BASE_URL}/products"
     payload = {**AUTH_CREDENTIALS, "categoryId": category_id}
     try:
-        response = requests.post(url, json=payload)
+        response = session.post(url, json=payload, timeout=(10, 30))
         response.raise_for_status()
         products_data = response.json()
         return products_data
+    except requests.exceptions.Timeout:
+        log.error(f"❌ Таймаут при получении товаров категории {category_id}")
+        return {"error": "Timeout"}
     except Exception as e:
         log.error(f"❌ Ошибка получения товаров категории {category_id}: {e}")
         return {"error": str(e)}
 
 
-def fetch_product_details(product_code):
+def fetch_product_details(product_code, max_retries=2):
     url = f"{BASE_URL}/product"
     payload = {**AUTH_CREDENTIALS, "code": product_code}
-    try:
-        response = requests.post(url, json=payload)
-        response.raise_for_status()
-        data = response.json()
-        return data
-    except Exception as e:
-        log.error(f"❌ Ошибка получения деталей для {product_code}: {e}")
-        return {}
+    
+    for attempt in range(max_retries):
+        try:
+            response = session.post(url, json=payload, timeout=(5, 15))
+            response.raise_for_status()
+            data = response.json()
+            return data
+        except requests.exceptions.Timeout:
+            if attempt < max_retries - 1:
+                log.warning(f"⏳ Таймаут при получении деталей для {product_code}, попытка {attempt + 1}/{max_retries}")
+                time.sleep(1)
+                continue
+            else:
+                log.error(f"❌ Таймаут при получении деталей для {product_code} после {max_retries} попыток")
+                return {}
+        except requests.exceptions.ConnectionError as e:
+            if attempt < max_retries - 1:
+                log.warning(f"⏳ Ошибка соединения для {product_code}, попытка {attempt + 1}/{max_retries}")
+                time.sleep(2)
+                continue
+            else:
+                log.error(f"❌ Ошибка соединения для {product_code}: {e}")
+                return {}
+        except Exception as e:
+            log.error(f"❌ Ошибка получения деталей для {product_code}: {e}")
+            return {}
+    
+    return {}
 
 
 @app.route('/products', methods=['GET'])
 def get_all_products():
+    global is_updating
+    
+    # Проверяем, не выполняется ли уже обновление
+    if not update_lock.acquire(blocking=False):
+        log.warning("⚠️ Обновление данных уже выполняется, возвращаем ошибку")
+        return jsonify({"error": "Обновление данных уже выполняется, попробуйте позже"}), 429
+    
+    if is_updating:
+        update_lock.release()
+        log.warning("⚠️ Обновление данных уже выполняется, возвращаем ошибку")
+        return jsonify({"error": "Обновление данных уже выполняется, попробуйте позже"}), 429
+    
+    is_updating = True
     start_time = datetime.now()
     log.info("🚀 СТАРТ ПОЛУЧЕНИЯ ДАННЫХ ИЗ БИО")
     
-    init_db()
+    try:
+        init_db()
 
-    categories_response = fetch_categories()
-    if "error" in categories_response:
-        log.error("❌ Критическая ошибка получения категорий")
-        return jsonify(categories_response), 500
+        categories_response = fetch_categories()
+        if "error" in categories_response:
+            log.error("❌ Критическая ошибка получения категорий")
+            return jsonify(categories_response), 500
 
-    total_products = 0
+        total_products = 0
+        
+        for category_group in categories_response:
+            categories = category_group.get("categories", [])
+            for category in categories:
+                category_id = category.get("id")
+                category_name = category.get("name", "Unknown Category")
+                if category_id:
+                    products = fetch_products_by_category(category_id)
+                    if isinstance(products, list):
+                        for product in products:
+                            product["category"] = category_name
+
+                            # Получаем детальную информацию о товаре
+                            product_details = fetch_product_details(product.get("code"))
+                            if isinstance(product_details, dict):
+                                product["description"] = product_details.get("description", "")
+                                product["sizeNet"] = product_details.get("sizeNet", "")
+                                product["sizeGross"] = product_details.get("sizeGross", "")
+                                product["weightGross"] = product_details.get("weightGross", 0)
+                                product["weightNet"] = product_details.get("weightNet", 0)
+
+                            save_product_to_db(product)
+                            total_products += 1
+                            
+                            # Небольшая задержка между запросами, чтобы не перегружать API
+                            if total_products % 10 == 0:
+                                time.sleep(0.1)  # Задержка каждые 10 товаров
     
-    for category_group in categories_response:
-        categories = category_group.get("categories", [])
-        for category in categories:
-            category_id = category.get("id")
-            category_name = category.get("name", "Unknown Category")
-            if category_id:
-                products = fetch_products_by_category(category_id)
-                if isinstance(products, list):
-                    for product in products:
-                        product["category"] = category_name
+        end_time = datetime.now()
+        duration = end_time - start_time
+        log.info(f"✅ ПОЛУЧЕНИЕ ДАННЫХ ИЗ БИО ЗАВЕРШЕНО. Товаров: {total_products}, Время: {duration}")
 
-                        # Получаем детальную информацию о товаре
-                        product_details = fetch_product_details(product.get("code"))
-                        if isinstance(product_details, dict):
-                            product["description"] = product_details.get("description", "")
-                            product["sizeNet"] = product_details.get("sizeNet", "")
-                            product["sizeGross"] = product_details.get("sizeGross", "")
-                            product["weightGross"] = product_details.get("weightGross", 0)
-                            product["weightNet"] = product_details.get("weightNet", 0)
-
-                        save_product_to_db(product)
-                        total_products += 1
-    
-    end_time = datetime.now()
-    duration = end_time - start_time
-    log.info(f"✅ ПОЛУЧЕНИЕ ДАННЫХ ИЗ БИО ЗАВЕРШЕНО. Товаров: {total_products}, Время: {duration}")
-
-    return jsonify({"message": "Данные успешно сохранены в базу", "total_products": total_products})
+        return jsonify({"message": "Данные успешно сохранены в базу", "total_products": total_products})
+    except Exception as e:
+        log.error(f"❌ Ошибка в эндпоинте /products: {e}")
+        log.exception("❌ Traceback:")
+        return jsonify({"error": str(e)}), 500
+    finally:
+        is_updating = False
+        update_lock.release()
+        log.info("🔓 Блокировка обновления снята (эндпоинт /products)")
 
 
 def run_update_stocks_script():
@@ -406,6 +476,19 @@ def scheduled_data_update():
     """
     Функция для автоматического обновления данных в 01:00 по времени Франкфурта
     """
+    global is_updating
+    
+    # Проверяем, не выполняется ли уже обновление
+    if not update_lock.acquire(blocking=False):
+        log.warning("⚠️ Обновление данных уже выполняется, пропускаем этот запуск")
+        return
+    
+    if is_updating:
+        log.warning("⚠️ Обновление данных уже выполняется, пропускаем этот запуск")
+        update_lock.release()
+        return
+    
+    is_updating = True
     start_time = datetime.now()
     log.info("🔄 Начинаем обновление данных")
     
@@ -451,6 +534,10 @@ def scheduled_data_update():
 
                             save_product_to_db(product)
                             total_products += 1
+                            
+                            # Небольшая задержка между запросами, чтобы не перегружать API
+                            if total_products % 10 == 0:
+                                time.sleep(0.1)  # Задержка каждые 10 товаров
         
         log.info(f"✅ Данные успешно сохранены в базу. Всего товаров: {total_products}")
         
@@ -471,6 +558,10 @@ def scheduled_data_update():
         log.error("❌ ОШИБКА АВТОМАТИЧЕСКОГО ОБНОВЛЕНИЯ!")
         log.error(f"❌ Продолжительность до ошибки: {duration}")
         log.exception("❌ Ошибка: %s", e)
+    finally:
+        is_updating = False
+        update_lock.release()
+        log.info("🔓 Блокировка обновления снята")
 
 
 def start_scheduler():
@@ -516,7 +607,9 @@ if __name__ == '__main__':
         
         # Запускаем обновление данных при старте приложения
         log.info("🚀 СТАРТ ПОЛУЧЕНИЯ ДАННЫХ ИЗ БИО")
-        scheduled_data_update()
+        # Запускаем в отдельном потоке, чтобы не блокировать планировщик
+        update_thread = threading.Thread(target=scheduled_data_update, daemon=True)
+        update_thread.start()
         
         # Для веб-сервиса раскомментируйте следующую строку
         # app.run(debug=False, host='0.0.0.0', port=5000)
