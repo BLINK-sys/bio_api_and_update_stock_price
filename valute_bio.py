@@ -1,72 +1,94 @@
 import requests
-from bs4 import BeautifulSoup
-import re
 
 def valute_bio():
     """
-    Парсит курсы валют с сайта BIO (EUR/USD к рублю)
+    Получает курсы валют с API BIO (EUR/USD к рублю)
     Возвращает курсы BIO для конвертации в рубли
     """
-    URL = "https://portal.holdingbio.ru/"
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+    BASE_URL = "http://api.bioshop.ru:8030"
+    AUTH_CREDENTIALS = {
+        "login": "dilyara@pospro.kz",
+        "password": "qo8qe7ti"
     }
     
     try:
-        response = requests.get(URL, headers=headers, timeout=10)
+        # Авторизация и получение курсов валют
+        url = f"{BASE_URL}/auth"
+        headers = {"content-type": "application/json; charset=utf-8"}
+        
+        response = requests.post(url, headers=headers, json=AUTH_CREDENTIALS, timeout=10)
         response.raise_for_status()
         
-        soup = BeautifulSoup(response.text, "html.parser")
+        data = response.json()
         
-        # Ищем курсы валют на странице
+        # Извлекаем курсы из ответа
+        if "rates" not in data:
+            raise ValueError("Курсы валют не найдены в ответе API")
+        
+        rates_array = data["rates"]
         bio_rates = {}
         
-        # Поиск по различным паттернам
-        patterns = [
-            r'YE\s*EUR.*?(\d+,\d+)\s*P',
-            r'EUR.*?(\d+,\d+)\s*P',
-            r'(\d+,\d+)\s*P.*?EUR'
-        ]
+        # Сначала ищем специальные курсы "УЕ EUR ВН" и "УЕ USD ВН" (как на сайте)
+        # Если их нет, используем обычные EUR и USD
+        ue_eur_found = False
+        ue_usd_found = False
         
-        for pattern in patterns:
-            matches = re.findall(pattern, soup.get_text(), re.IGNORECASE | re.DOTALL)
-            if matches:
-                try:
-                    rate_str = matches[0].replace(',', '.')
-                    bio_rates['EUR'] = float(rate_str)
-                    print(f"Найден курс EUR: {bio_rates['EUR']}")
-                    break
-                except ValueError:
-                    continue
+        for rate_item in rates_array:
+            currency = rate_item.get("currency", "")
+            rate = rate_item.get("rate")
+            frequency = rate_item.get("frequency", 1)
+            
+            if rate is not None:
+                # Учитываем кратность (frequency)
+                final_rate = rate * frequency
+                # Применяем ту же логику, что была в старом коде (добавляем 1%)
+                rate_value = round(final_rate + (final_rate * 0.01), 2)
+                
+                # Приоритет: сначала ищем "УЕ EUR ВН" и "УЕ USD ВН"
+                if currency == "УЕ EUR ВН":
+                    bio_rates["EUR"] = rate_value
+                    ue_eur_found = True
+                    print(f"✓ Найден курс УЕ EUR ВН: {bio_rates['EUR']} (rate: {rate}, frequency: {frequency}, +1%: {rate_value})")
+                elif currency == "УЕ USD ВН":
+                    bio_rates["USD"] = rate_value
+                    ue_usd_found = True
+                    print(f"✓ Найден курс УЕ USD ВН: {bio_rates['USD']} (rate: {rate}, frequency: {frequency}, +1%: {rate_value})")
         
-        # Поиск USD курса
-        usd_patterns = [
-            r'YE\s*USD.*?(\d+,\d+)\s*P',
-            r'USD.*?(\d+,\d+)\s*P',
-            r'(\d+,\d+)\s*P.*?USD'
-        ]
+        # Если не нашли специальные курсы, используем обычные EUR и USD
+        if not ue_eur_found or not ue_usd_found:
+            for rate_item in rates_array:
+                currency = rate_item.get("currency", "").upper()
+                rate = rate_item.get("rate")
+                frequency = rate_item.get("frequency", 1)
+                
+                if rate is not None:
+                    final_rate = rate * frequency
+                    # Применяем ту же логику, что была в старом коде (добавляем 1%)
+                    rate_value = round(final_rate + (final_rate * 0.01), 2)
+                    
+                    if currency == "EUR" and "EUR" not in bio_rates:
+                        bio_rates["EUR"] = rate_value
+                        print(f"✓ Найден курс EUR: {bio_rates['EUR']} (rate: {rate}, frequency: {frequency}, +1%: {rate_value})")
+                    elif currency == "USD" and "USD" not in bio_rates:
+                        bio_rates["USD"] = rate_value
+                        print(f"✓ Найден курс USD: {bio_rates['USD']} (rate: {rate}, frequency: {frequency}, +1%: {rate_value})")
         
-        for pattern in usd_patterns:
-            matches = re.findall(pattern, soup.get_text(), re.IGNORECASE | re.DOTALL)
-            if matches:
-                try:
-                    rate_str = matches[0].replace(',', '.')
-                    bio_rates['USD'] = float(rate_str)
-                    print(f"Найден курс USD: {bio_rates['USD']}")
-                    break
-                except ValueError:
-                    continue
-        
-        # Если не нашли, используем значения по умолчанию
-        if not bio_rates:
-            print("⚠️ Курсы BIO не найдены на странице, используем значения по умолчанию")
-            bio_rates = {'EUR': 109.0, 'USD': 93.0}
+        # Проверяем, что нашли оба курса
+        if "EUR" not in bio_rates or "USD" not in bio_rates:
+            missing = [c for c in ["EUR", "USD"] if c not in bio_rates]
+            print(f"⚠️ Не найдены курсы для валют: {missing}, используем значения по умолчанию")
+            if "EUR" not in bio_rates:
+                bio_rates["EUR"] = 109.0
+            if "USD" not in bio_rates:
+                bio_rates["USD"] = 93.0
         
         print(f"Итоговые курсы BIO: {bio_rates}")
         return bio_rates
         
     except Exception as e:
-        print(f"❌ Ошибка при парсинге курсов BIO: {e}")
+        print(f"❌ Ошибка при получении курсов BIO через API: {e}")
+        import traceback
+        traceback.print_exc()
         print("Используем значения по умолчанию")
         return {'EUR': 109.0, 'USD': 93.0}
 
