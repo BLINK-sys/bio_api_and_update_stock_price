@@ -96,41 +96,41 @@ def calculate_delivery_cost(weight_kg, volume_m3):
     delivery_weight = max(weight_kg, volumetric_weight)
     
     if delivery_weight <= 30:
-        # До 30 кг: 7500 + 10000 + (26*400) + 4000 = 31,900 тг
-        return 31900
+        # До 30 кг: 9000 + 12000 + (26*450) + 5000 = 37,700 тг
+        return 37700
     elif delivery_weight <= 300:
-        # 30-300 кг: 7500 + (вес-30)*179 + 10000 + (вес-30)*20 + 26*400 + 4000 + (вес-30)*15
+        # 30-300 кг: 9000 + (вес-30)*215 + 12000 + (вес-30)*27 + 26*450 + 5000 + (вес-30)*19
         excess_weight = delivery_weight - 30
-        return 7500 + (excess_weight * 179) + 10000 + (excess_weight * 20) + 10400 + 4000 + (excess_weight * 15)
+        return 9000 + (excess_weight * 215) + 12000 + (excess_weight * 27) + 11700 + 5000 + (excess_weight * 19)
     elif delivery_weight <= 1000:
         # 300-1000 кг: сумма трех компонентов
         excess_300 = delivery_weight - 300
         excess_1000 = max(0, delivery_weight - 1000)
-        
+
         # Компонент 1: город+город
-        component1 = 7500 + (270 * 179) + (excess_300 * 164) + (excess_1000 * 143)
-        
+        component1 = 9000 + (270 * 215) + (excess_300 * 164) + (excess_1000 * 143)
+
         # Компонент 2: забор склад БИО
-        component2 = 10000 + (270 * 20) + (excess_300 * 15) + excess_1000 + 10400
-        
+        component2 = 12000 + (270 * 27) + (excess_300 * 15) + excess_1000 + 11700
+
         # Компонент 3: доставка по Астане
-        component3 = 4000 + (270 * 15) + (excess_300 * 2) + (excess_1000 * 9) + 10400
-        
+        component3 = 5000 + (270 * 19) + (excess_300 * 2) + (excess_1000 * 9) + 11700
+
         return component1 + component2 + component3
     else:
         # Свыше 1000 кг - используем формулу для 1000 кг (без рекурсии)
         excess_300 = 700  # 1000 - 300
         excess_1000 = 0   # 1000 - 1000 = 0
-        
+
         # Компонент 1: город+город
-        component1 = 7500 + (270 * 179) + (excess_300 * 164) + (excess_1000 * 143)
-        
+        component1 = 9000 + (270 * 215) + (excess_300 * 164) + (excess_1000 * 143)
+
         # Компонент 2: забор склад БИО
-        component2 = 10000 + (270 * 20) + (excess_300 * 15) + excess_1000 + 10400
-        
+        component2 = 12000 + (270 * 27) + (excess_300 * 15) + excess_1000 + 11700
+
         # Компонент 3: доставка по Астане
-        component3 = 4000 + (270 * 15) + (excess_300 * 2) + (excess_1000 * 9) + 10400
-        
+        component3 = 5000 + (270 * 19) + (excess_300 * 2) + (excess_1000 * 9) + 11700
+
         return component1 + component2 + component3
 
 
