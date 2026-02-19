@@ -4,9 +4,10 @@ import sys
 import os
 import logging
 
-# Настройка переменных окружения для Render
-os.environ.setdefault("PYTHONUNBUFFERED", "1")
-os.environ.setdefault("PYTHONIOENCODING", "UTF-8")
+# Принудительно отключаем буферизацию вывода для Render
+os.environ["PYTHONUNBUFFERED"] = "1"
+os.environ["PYTHONIOENCODING"] = "UTF-8"
+sys.stdout.reconfigure(line_buffering=True)
 
 # Настройка логирования для Render
 logging.basicConfig(
@@ -75,12 +76,12 @@ valute.valute()
 # Перезагружаем модуль info для получения обновленных курсов
 import importlib
 importlib.reload(info)
-log.info(f"💱 Курс валют обновлён: {info.exchange_rates}")
+log.debug(f"💱 Курс валют обновлён: {info.exchange_rates}")
 
 # Обновляем курсы BIO
 import valute_bio
 valute_bio.get_bio_rates()
-log.info("💱 Курсы BIO обновлены")
+log.debug("💱 Курсы BIO обновлены")
 
 
 def calculate_delivery_cost(weight_kg, volume_m3):
@@ -184,7 +185,7 @@ def init_db():
     
     # Очищаем старые данные перед записью новых
     cursor.execute("DELETE FROM products")
-    log.info("🗑️ Старые данные из базы удалены")
+    log.debug("🗑️ Старые данные из базы удалены")
     
     conn.commit()
     conn.close()
@@ -300,7 +301,7 @@ def fetch_categories():
         response = session.post(url, json=AUTH_CREDENTIALS, timeout=(10, 30))
         response.raise_for_status()
         categories_data = response.json()
-        log.info(f"✅ Получено категорий: {len(categories_data) if isinstance(categories_data, list) else 'ошибка'}")
+        log.debug(f"✅ Получено категорий: {len(categories_data) if isinstance(categories_data, list) else 'ошибка'}")
         return categories_data
     except requests.exceptions.Timeout:
         log.error(f"❌ Таймаут при получении категорий")
@@ -375,8 +376,8 @@ def get_all_products():
     
     is_updating = True
     start_time = datetime.now()
-    log.info("🚀 СТАРТ ПОЛУЧЕНИЯ ДАННЫХ ИЗ БИО")
-    
+    log.info("🚀 Старт сбора данных из БИО (эндпоинт)")
+
     try:
         init_db()
 
@@ -386,7 +387,7 @@ def get_all_products():
             return jsonify(categories_response), 500
 
         total_products = 0
-        
+
         for category_group in categories_response:
             categories = category_group.get("categories", [])
             for category in categories:
@@ -409,14 +410,14 @@ def get_all_products():
 
                             save_product_to_db(product)
                             total_products += 1
-                            
+
                             # Небольшая задержка между запросами, чтобы не перегружать API
                             if total_products % 10 == 0:
                                 time.sleep(0.1)  # Задержка каждые 10 товаров
-    
+
         end_time = datetime.now()
         duration = end_time - start_time
-        log.info(f"✅ ПОЛУЧЕНИЕ ДАННЫХ ИЗ БИО ЗАВЕРШЕНО. Товаров: {total_products}, Время: {duration}")
+        log.info(f"✅ Сбор из БИО завершён. Товаров: {total_products}, Время: {duration}")
 
         return jsonify({"message": "Данные успешно сохранены в базу", "total_products": total_products})
     except Exception as e:
@@ -434,10 +435,9 @@ def run_update_stocks_script():
     Запускает скрипт обновления остатков после завершения сбора данных
     """
     start_time = datetime.now()
-    log.info("🔄 Обновление остатков...")
-    
+    log.info("🔄 Старт выгрузки на сайт...")
+
     try:
-        # Запускаем скрипт update_stocks_bio.py с стримингом вывода
         proc = subprocess.Popen(
             ['python', '-u', 'update_stocks_bio.py'],
             stdout=subprocess.PIPE,
@@ -448,70 +448,63 @@ def run_update_stocks_script():
             bufsize=1,
             cwd=os.getcwd()
         )
-        
-        # Читаем построчно и сразу пробрасываем в лог
+
+        # Читаем вывод, но не логируем каждую строку
         for line in proc.stdout:
-            log.info("update_stocks | %s", line.rstrip())
-        
+            log.debug("update_stocks | %s", line.rstrip())
+
         rc = proc.wait()
         end_time = datetime.now()
         duration = end_time - start_time
-        
+
         if rc == 0:
-            log.info("✅ Скрипт обновления остатков успешно завершён")
-            log.info(f"✅ Продолжительность: {duration}")
+            log.info(f"✅ Выгрузка на сайт завершена. Время: {duration}")
         else:
-            log.error("❌ Скрипт обновления остатков завершился с кодом %s", rc)
-            log.error(f"❌ Продолжительность до ошибки: {duration}")
-            
+            log.error("❌ Скрипт выгрузки завершился с кодом %s", rc)
+
     except Exception as e:
-        end_time = datetime.now()
-        duration = end_time - start_time
-        log.error("❌ Ошибка запуска скрипта обновления")
-        log.error(f"❌ Продолжительность до ошибки: {duration}")
+        log.error("❌ Ошибка запуска скрипта выгрузки")
         log.exception("❌ Ошибка: %s", e)
 
 
 def scheduled_data_update():
     """
-    Функция для автоматического обновления данных в 01:00 по времени Франкфурта
+    Функция для автоматического обновления данных
     """
     global is_updating
-    
+
     # Проверяем, не выполняется ли уже обновление
     if not update_lock.acquire(blocking=False):
-        log.warning("⚠️ Обновление данных уже выполняется, пропускаем этот запуск")
+        log.warning("⚠️ Обновление уже выполняется, пропускаем")
         return
-    
+
     if is_updating:
-        log.warning("⚠️ Обновление данных уже выполняется, пропускаем этот запуск")
+        log.warning("⚠️ Обновление уже выполняется, пропускаем")
         update_lock.release()
         return
-    
+
     is_updating = True
     start_time = datetime.now()
-    log.info("🔄 Начинаем обновление данных")
-    
+    log.info("🚀 Старт сбора данных из БИО")
+
     try:
         # Обновляем курсы валют
         valute.valute()
         importlib.reload(info)
-        log.info(f"💱 Курсы обновлены: {info.exchange_rates}")
-        
+        log.debug(f"💱 Курсы обновлены: {info.exchange_rates}")
+
         # Инициализируем базу данных
         init_db()
-        
+
         # Получаем категории
-        log.info("📂 Получаем категории...")
         categories_response = fetch_categories()
         if "error" in categories_response:
             log.error(f"❌ Ошибка получения категорий: {categories_response['error']}")
             return
-        
+
         # Обрабатываем товары
-        log.info("🔄 Обработка товаров...")
         total_products = 0
-        
+
         for category_group in categories_response:
             categories = category_group.get("categories", [])
             for category in categories:
@@ -534,91 +527,65 @@ def scheduled_data_update():
 
                             save_product_to_db(product)
                             total_products += 1
-                            
-                            # Небольшая задержка между запросами, чтобы не перегружать API
+
+                            # Небольшая задержка между запросами
                             if total_products % 10 == 0:
-                                time.sleep(0.1)  # Задержка каждые 10 товаров
-        
-        log.info(f"✅ Данные успешно сохранены в базу. Всего товаров: {total_products}")
-        
-        # Запускаем скрипт обновления остатков
-        log.info("🔄 Обновление остатков...")
+                                time.sleep(0.1)
+
+        log.info(f"✅ Сбор из БИО завершён. Товаров: {total_products}")
+
+        # Запускаем выгрузку на сайт
         run_update_stocks_script()
-        
-        # Выводим итоговую информацию
+
+        # Итог
         end_time = datetime.now()
         duration = end_time - start_time
-        log.info("🎉 АВТОМАТИЧЕСКОЕ ОБНОВЛЕНИЕ УСПЕШНО ЗАВЕРШЕНО!")
-        log.info(f"🎉 Общая продолжительность: {duration}")
-        log.info(f"🎉 Обработано товаров: {total_products}")
-        
+        log.info(f"🎉 Обновление завершено. Товаров: {total_products}, Время: {duration}")
+
     except Exception as e:
         end_time = datetime.now()
         duration = end_time - start_time
-        log.error("❌ ОШИБКА АВТОМАТИЧЕСКОГО ОБНОВЛЕНИЯ!")
-        log.error(f"❌ Продолжительность до ошибки: {duration}")
+        log.error(f"❌ Ошибка обновления (время: {duration})")
         log.exception("❌ Ошибка: %s", e)
     finally:
         is_updating = False
         update_lock.release()
-        log.info("🔓 Блокировка обновления снята")
+        log.debug("🔓 Блокировка обновления снята")
 
 
 def start_scheduler():
     """
     Запускает планировщик задач в отдельном потоке
+    Автообновление каждое воскресенье в 17:00 UTC
     """
     def run_scheduler():
-        # Планируем задачу на 1 утра по времени Франкфурта (UTC+1)
-        # Если сервер в UTC, то это 0:00 UTC (полночь)
-        schedule.every().day.at("00:00").do(scheduled_data_update)
-        
-        log.info("⏰ Планировщик запущен. Следующее обновление в 00:00 UTC")
-        log.info(f"⏰ Текущее время: {datetime.now()}")
-        log.info(f"⏰ Часовой пояс: {time.tzname}")
-        
+        schedule.every().sunday.at("17:00").do(scheduled_data_update)
+
+        log.info("⏰ Планировщик запущен. Обновление: каждое воскресенье в 17:00 UTC")
+
         while True:
             schedule.run_pending()
-            time.sleep(60)  # Проверяем каждую минуту
-    
-    # Запускаем планировщик в отдельном потоке
+            time.sleep(60)
+
     scheduler_thread = threading.Thread(target=run_scheduler, daemon=True)
     scheduler_thread.start()
-    log.info("🚀 Планировщик задач запущен в фоновом режиме")
 
 
 if __name__ == '__main__':
     try:
-        # Логируем запуск приложения
-        log.info("🎯 ЗАПУСК ПРИЛОЖЕНИЯ BIO API")
-        log.info("🔧 Проверяем доступность модулей...")
-        
-        # Проверяем импорты
-        try:
-            log.info("✅ requests импортирован успешно")
-            log.info("✅ sqlite3 импортирован успешно")
-            log.info("✅ flask импортирован успешно")
-            log.info("✅ schedule импортирован успешно")
-        except Exception as e:
-            log.error(f"❌ Ошибка импорта: {e}")
-        
-        # Запускаем планировщик при старте приложения
+        log.info("🎯 BIO API запущен (Background Worker)")
+
+        # Запускаем планировщик (воскресенье 17:00 UTC)
         start_scheduler()
-        
-        # Запускаем обновление данных при старте приложения
-        log.info("🚀 СТАРТ ПОЛУЧЕНИЯ ДАННЫХ ИЗ БИО")
-        # Запускаем в отдельном потоке, чтобы не блокировать планировщик
+
+        # Запускаем обновление данных при деплое
         update_thread = threading.Thread(target=scheduled_data_update, daemon=True)
         update_thread.start()
-        
-        # Для веб-сервиса раскомментируйте следующую строку
-        # app.run(debug=False, host='0.0.0.0', port=5000)
-        
-        # Для Background Worker просто держим процесс живым
-        log.info("🌐 Приложение готово к работе (Background Worker)")
+
+        # Держим процесс живым
         while True:
-            time.sleep(60)  # Проверяем каждую минуту
-            
+            time.sleep(60)
+
     except Exception as e:
         log.error("❌ КРИТИЧЕСКАЯ ОШИБКА: %s", e)
         log.exception("❌ Traceback:")
